@@ -1,0 +1,606 @@
+openapi: 3.1.0
+info:
+  title: CareerProxy API
+  version: 1.0.0
+  description: Job application consultancy platform API
+servers:
+  - url: https://careerproxy.com/api/v1
+    description: Production
+  - url: http://localhost:3000/api/v1
+    description: Local development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Profile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        full_name: { type: string }
+        phone: { type: string }
+        plan: { $ref: '#/components/schemas/SubscriptionPlan' }
+        status: { type: string, enum: [active, paused, inactive] }
+        role: { $ref: '#/components/schemas/UserRole' }
+        onboarding_complete: { type: boolean }
+        team_member_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+
+    JobPreferences:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        candidate_id: { type: string, format: uuid }
+        target_titles: { type: array, items: { type: string } }
+        industries: { type: array, items: { type: string } }
+        locations: { type: array, items: { type: string } }
+        salary_min: { type: integer }
+        salary_max: { type: integer }
+        work_type: { type: string, enum: [remote, hybrid, onsite] }
+        visa_sponsorship: { type: boolean }
+        updated_at: { type: string, format: date-time }
+
+    Resume:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        candidate_id: { type: string, format: uuid }
+        file_url: { type: string }
+        file_name: { type: string }
+        file_type: { type: string, enum: [pdf, docx] }
+        is_active: { type: boolean }
+        uploaded_at: { type: string, format: date-time }
+
+    Application:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        candidate_id: { type: string, format: uuid }
+        team_member_id: { type: string, format: uuid }
+        company: { type: string }
+        job_title: { type: string }
+        job_board: { $ref: '#/components/schemas/JobBoard' }
+        job_url: { type: string }
+        status: { $ref: '#/components/schemas/ApplicationStatus' }
+        applied_at: { type: string, format: date-time }
+        notes: { type: string }
+
+    ApplicationStatus:
+      type: string
+      enum: [applied, viewed, interview_scheduled, rejected, offer, withdrawn]
+
+    JobBoard:
+      type: string
+      enum: [LinkedIn, Indeed, Glassdoor]
+
+    UserRole:
+      type: string
+      enum: [candidate, team_member, admin]
+
+    SubscriptionPlan:
+      type: string
+      enum: [starter, pro, premium]
+
+    Message:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        thread_id: { type: string, format: uuid }
+        sender_id: { type: string, format: uuid }
+        sender_role: { type: string, enum: [candidate, team_member] }
+        content: { type: string }
+        created_at: { type: string, format: date-time }
+        read_at: { type: string, format: date-time, nullable: true }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        candidate_id: { type: string, format: uuid }
+        stripe_subscription_id: { type: string }
+        plan: { $ref: '#/components/schemas/SubscriptionPlan' }
+        status: { type: string, enum: [active, canceled, past_due, trialing, incomplete] }
+        current_period_end: { type: string, format: date-time }
+        cancel_at: { type: string, format: date-time, nullable: true }
+
+    Metrics:
+      type: object
+      properties:
+        total_candidates: { type: integer }
+        active_subscriptions: { type: integer }
+        mrr: { type: number }
+        total_applications: { type: integer }
+        avg_apps_per_candidate: { type: number }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+security:
+  - BearerAuth: []
+
+paths:
+  /auth/signup:
+    post:
+      summary: Register a new candidate
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, full_name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                full_name: { type: string }
+      responses:
+        '201': { description: Created }
+        '409': { description: Email already exists }
+        '422': { description: Validation error }
+
+  /auth/login:
+    post:
+      summary: Authenticate and return JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: OK }
+        '401': { description: Invalid credentials }
+
+  /auth/logout:
+    post:
+      summary: Invalidate session
+      responses:
+        '204': { description: No content }
+
+  /auth/reset-password:
+    post:
+      summary: Trigger password reset email
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200': { description: OK }
+
+  /candidates/me:
+    get:
+      summary: Get current candidate profile
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+    patch:
+      summary: Update profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name: { type: string }
+                phone: { type: string }
+                email: { type: string, format: email }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+
+  /candidates/me/preferences:
+    get:
+      summary: Get job preferences
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobPreferences' }
+    put:
+      summary: Replace job preferences
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobPreferences' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobPreferences' }
+
+  /candidates/me/dashboard:
+    get:
+      summary: Dashboard stats
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_apps_this_month: { type: integer }
+                  interviews_scheduled: { type: integer }
+                  plan: { $ref: '#/components/schemas/SubscriptionPlan' }
+                  plan_status: { type: string }
+
+  /resumes:
+    get:
+      summary: List candidate resumes
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Resume' }
+    post:
+      summary: Upload resume
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Resume' }
+        '413': { description: File too large }
+        '422': { description: Invalid file type }
+
+  /resumes/{id}:
+    delete:
+      summary: Delete resume
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+
+  /resumes/{id}/activate:
+    patch:
+      summary: Set as active resume
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Resume' }
+
+  /applications:
+    get:
+      summary: List applications
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ApplicationStatus' }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 25 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Application' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+    post:
+      summary: Log a new application (team only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidate_id, company, job_title, job_board, job_url]
+              properties:
+                candidate_id: { type: string, format: uuid }
+                company: { type: string }
+                job_title: { type: string }
+                job_board: { $ref: '#/components/schemas/JobBoard' }
+                job_url: { type: string }
+                applied_at: { type: string, format: date-time }
+                notes: { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '403': { description: Forbidden }
+        '422': { description: Validation error }
+        '429': { description: Plan daily limit reached }
+
+  /applications/bulk:
+    post:
+      summary: Bulk import applications (team only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required: [candidate_id, company, job_title, job_board, job_url]
+                properties:
+                  candidate_id: { type: string }
+                  company: { type: string }
+                  job_title: { type: string }
+                  job_board: { $ref: '#/components/schemas/JobBoard' }
+                  job_url: { type: string }
+                  applied_at: { type: string }
+                  notes: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported: { type: integer }
+                  failed: { type: integer }
+                  errors: { type: array, items: { type: object } }
+
+  /applications/{id}:
+    get:
+      summary: Get single application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+    patch:
+      summary: Update application status or notes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { $ref: '#/components/schemas/ApplicationStatus' }
+                notes: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+    delete:
+      summary: Soft-delete application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+
+  /messages/{candidateId}:
+    get:
+      summary: Get message thread
+      parameters:
+        - name: candidateId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Message' }
+        '403': { description: Forbidden }
+    post:
+      summary: Send message
+      parameters:
+        - name: candidateId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1 }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+
+  /subscriptions/me:
+    get:
+      summary: Get current subscription
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+
+  /subscriptions/checkout:
+    post:
+      summary: Create Stripe checkout session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan]
+              properties:
+                plan: { $ref: '#/components/schemas/SubscriptionPlan' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_url: { type: string }
+
+  /subscriptions/portal:
+    post:
+      summary: Create Stripe billing portal session
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portal_url: { type: string }
+        '400': { description: No active subscription }
+
+  /webhooks/stripe:
+    post:
+      summary: Handle Stripe webhooks
+      security: []
+      responses:
+        '200': { description: OK }
+        '400': { description: Invalid signature }
+
+  /admin/candidates:
+    get:
+      summary: List all candidates
+      parameters:
+        - name: plan
+          in: query
+          schema: { $ref: '#/components/schemas/SubscriptionPlan' }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: team_member_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 25 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Profile' }
+                  total: { type: integer }
+
+  /admin/team:
+    get:
+      summary: List all team members
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Profile' }
+    post:
+      summary: Create team member account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, full_name]
+              properties:
+                email: { type: string, format: email }
+                full_name: { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+
+  /admin/team/{id}/assign:
+    patch:
+      summary: Assign candidates to team member
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidate_ids]
+              properties:
+                candidate_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /admin/metrics:
+    get:
+      summary: Platform metrics
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Metrics' }
