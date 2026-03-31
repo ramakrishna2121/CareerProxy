@@ -7,6 +7,7 @@ const patchSchema = z.object({
   full_name: z.string().min(1).optional(),
   phone: z.string().optional(),
   email: z.string().email().optional(),
+  onboarding_complete: z.boolean().optional(),
 })
 
 // GET /api/v1/candidates/me

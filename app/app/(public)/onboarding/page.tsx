@@ -235,7 +235,7 @@ function OnboardingContent() {
 
     // Try API first
     try {
-      await fetch('/api/v1/candidates/me', {
+      const res = await fetch('/api/v1/candidates/me', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -243,22 +243,23 @@ function OnboardingContent() {
         },
         body: JSON.stringify({ onboarding_complete: true }),
       })
+      if (res.ok) return
     } catch {
-      // Fall back to Supabase client
-      try {
-        const supabase = createClient()
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        if (user) {
-          await supabase
-            .from('profiles')
-            .update({ onboarding_complete: true })
-            .eq('id', user.id)
-        }
-      } catch {
-        console.warn('Could not mark onboarding complete — continuing anyway')
+      // fall through to Supabase client
+    }
+
+    // Fall back to direct Supabase client update
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_complete: true })
+          .eq('id', user.id)
       }
+    } catch {
+      console.warn('Could not mark onboarding complete — continuing anyway')
     }
   }
 

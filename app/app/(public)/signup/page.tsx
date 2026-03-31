@@ -3,6 +3,7 @@
 import { useState, FormEvent, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import { type SubscriptionPlan } from '@/types'
 
 function SignupContent() {
@@ -41,10 +42,14 @@ function SignupContent() {
         return
       }
 
-      if (data.access_token) {
+      if (data.access_token && data.refresh_token) {
+        // Establish cookie-based session so the proxy middleware recognises the user
+        const supabase = createClient()
+        await supabase.auth.setSession({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+        })
         localStorage.setItem('access_token', data.access_token)
-      }
-      if (data.refresh_token) {
         localStorage.setItem('refresh_token', data.refresh_token)
       }
 

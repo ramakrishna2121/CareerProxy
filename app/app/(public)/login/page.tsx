@@ -3,6 +3,7 @@
 import { useState, FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -30,10 +31,14 @@ export default function LoginPage() {
         return
       }
 
-      if (data.access_token) {
+      if (data.access_token && data.refresh_token) {
+        // Establish cookie-based session for the proxy middleware
+        const supabase = createClient()
+        await supabase.auth.setSession({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+        })
         localStorage.setItem('access_token', data.access_token)
-      }
-      if (data.refresh_token) {
         localStorage.setItem('refresh_token', data.refresh_token)
       }
 
